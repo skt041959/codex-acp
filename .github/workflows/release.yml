@@ -43,31 +43,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
-            target: aarch64-apple-darwin
-            binary_extension: ""
-          - os: macos-14
-            target: x86_64-apple-darwin
-            binary_extension: ""
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             binary_extension: ""
-          - os: ubuntu-24.04
-            target: x86_64-unknown-linux-musl
-            binary_extension: ""
-          - os: ubuntu-22.04-arm
-            target: aarch64-unknown-linux-gnu
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
-            binary_extension: ""
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            binary_extension: ".exe"
-          - os: windows-11-arm
-            target: aarch64-pc-windows-msvc
-            binary_extension: ".exe"
+            container: quay.io/almalinuxorg/almalinux:8
 
     runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
 
     steps:
       - uses: actions/checkout@v4
@@ -109,8 +91,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update -y
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pkg-config libcap-dev
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pkg-config libcap-dev
+          elif command -v dnf >/dev/null 2>&1; then
+            if command -v sudo >/dev/null 2>&1; then
+              sudo dnf install -y pkgconf-pkg-config libcap-devel openssl-devel gcc gcc-c++
+            else
+              dnf install -y pkgconf-pkg-config libcap-devel openssl-devel gcc gcc-c++
+            fi
+          fi
 
       - name: Install UBSan runtime (musl)
         if: ${{ matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl' }}
@@ -122,15 +112,11 @@ jobs:
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libubsan1
           fi
 
-      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl' || matrix.target == 'x86_64-unknown-linux-gnu' || matrix.target == 'aarch64-unknown-linux-gnu' }}
+      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl'}}
         name: Install Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.13.0
-
-      - if: ${{ matrix.target == 'x86_64-unknown-linux-gnu' || matrix.target == 'aarch64-unknown-linux-gnu' }}
-        name: Install cargo-zigbuild
-        run: pipx install cargo-zigbuild
+          version: 0.14.0
 
       - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl'}}
         name: Install musl build tools
@@ -197,13 +183,7 @@ jobs:
           echo "AWS_LC_SYS_NO_JITTER_ENTROPY=1" >> "$GITHUB_ENV"
 
       - name: Build release binary
-        shell: bash
-        run: |
-          if [[ "${{ matrix.target }}" == "x86_64-unknown-linux-gnu" || "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
-            cargo zigbuild --release --target ${{ matrix.target }}.2.28
-          else
-            cargo build --release --target ${{ matrix.target }}
-          fi
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Code sign macOS binary
         if: startsWith(matrix.os, 'macos')
