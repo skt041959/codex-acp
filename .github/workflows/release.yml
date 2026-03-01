@@ -43,31 +43,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
-            target: aarch64-apple-darwin
-            binary_extension: ""
-          - os: macos-14
-            target: x86_64-apple-darwin
-            binary_extension: ""
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             binary_extension: ""
-          - os: ubuntu-24.04
-            target: x86_64-unknown-linux-musl
-            binary_extension: ""
-          - os: ubuntu-22.04-arm
-            target: aarch64-unknown-linux-gnu
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
-            binary_extension: ""
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            binary_extension: ".exe"
-          - os: windows-11-arm
-            target: aarch64-pc-windows-msvc
-            binary_extension: ".exe"
+            container: quay.io/almalinuxorg/almalinux:8
 
     runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
 
     steps:
       - uses: actions/checkout@v4
@@ -109,8 +91,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update -y
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pkg-config libcap-dev
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pkg-config libcap-dev
+          elif command -v dnf >/dev/null 2>&1; then
+            if command -v sudo >/dev/null 2>&1; then
+              sudo dnf install -y pkgconf-pkg-config libcap-devel openssl-devel gcc gcc-c++
+            else
+              dnf install -y pkgconf-pkg-config libcap-devel openssl-devel gcc gcc-c++
+            fi
+          fi
 
       - name: Install UBSan runtime (musl)
         if: ${{ matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl' }}
